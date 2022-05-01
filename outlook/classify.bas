@@ -5,6 +5,7 @@ Option Explicit
 Private Const SAVED_ROOT_DIR As String = "C:\TMP\"
 Private Const UN_CLASSIFY_DIR As String = "Others\"
 Private Const WORKSHEET_NAME As String = "spa"
+Private Const KEYWORD As String = "vendor"
 
 Private Function classByReceivedData(ByVal Item As Object) As String
     Dim recv_date As String
@@ -27,26 +28,43 @@ Private Function classByReceivedData(ByVal Item As Object) As String
     Else
         classByReceivedData = now_day_012 & "-" & next_day_09
     End If
+
+    MsgBox classByReceivedData
 End Function
 
 Private Function readFormDataInExcelFile(filepath As String) As String
     Dim excelApp As Excel.Application
     Dim xWb As Excel.workBook
     Dim xWs As Excel.Worksheet
+    Dim cell As Range
+    
+    readFormDataInExcelFile = UN_CLASSIFY_DIR
     Set excelApp = CreateObject("Excel.Application")
     Set xWb = excelApp.Workbooks.Open(filepath, True, True)
     Set xWs = xWb.Worksheets(WORKSHEET_NAME)
+    If xWs Is Nothing Then
+        Set xWs = xWb.Worksheets(LCase(WORKSHEET_NAME))
+        If xWs Is Nothing Then
+            End
+        End If
+    End If
+    
+    With xWs.UsedRange
+        Set cell = .Find(KEYWORD, LookIn:=xlValues)
+        If Not cell Is Nothing Then
+            Debug.Print cell.Address
+            Debug.Print "find row: " & cell.Row & "find colum: " & cell.Column
+            MsgBox "find row: " & cell.Row & "find colum: " & cell.Column
+            MsgBox xWs.Cells(cell.Row, cell.Column + 1).Value
+            readFormDataInExcelFile = xWs.Cells(cell.Row, cell.Column + 1).Value
+        End If
+    End With
 
-    excelApp.Visible = True
-    excelApp.DisplayAlerts = True
-    Debug.Print xWs.Cells(1, 2).Value
-    Debug.Print xWs.Cells(2, 2).Value
-    Debug.Print xWs.Cells(3, 2).Value
-
+    MsgBox readFormDataInExcelFile
     xWb.Close False
     Set xWs = Nothing
     Set xWb = Nothing
-    readFormDataInExcelFile = "result"
+
 End Function
 
 Private Function saveAttachTempory(ByVal attach As Object) As String
@@ -69,10 +87,6 @@ Private Function classByAttach(ByVal Item As Object) As String
             Set olAtt = Item.Attachments(i)
             If olAtt.filename Like "*.xls*" Or olAtt.filename Like "*.csv" Then
                 tmpXlsPath = saveAttachTempory(olAtt)
-                MsgBox tmpXlsPath
-                Debug.Print tmpXlsPath
-                Debug.Print "before readFormDataInExcelFile"
-                MsgBox "before readFormDataInExcelFile"
                 classByAttach = readFormDataInExcelFile(tmpXlsPath)
                 DestoryTempory (tmpXlsPath)
             End If
@@ -100,7 +114,6 @@ Private Function choseAndCreateSaveDir(Item As Outlook.mailitem) As String
         On Error Resume Next
     End If
 
-    Debug.Print "classbyattach"
     attchClassRes = classByAttach(Item)
     saveDir = saveDir & "\" & attchClassRes
     If Len(Dir(saveDir, vbDirectory)) = 0 Then
@@ -133,7 +146,6 @@ End Function
 Private Function doSaveMailBody(ByVal Item As Object, path$, Optional condition$ = "*")
     Item.SaveAs path & "\" & Item.Subject & ".msg", OlSaveAsType.olMSG
 End Function
-
 
 Public Sub main(Item As Outlook.mailitem)
     Dim saveDir As String
