@@ -1,156 +1,191 @@
 Attribute VB_Name = "classify"
 Option Explicit
+Option Compare Text
 
 'Private WithEvents inboxItems As Outlook.Items
-Private Const SAVED_ROOT_DIR As String = "C:\TMP\"
-Private Const UN_CLASSIFY_DIR As String = "Others\"
-Private Const WORKSHEET_NAME As String = "spa"
-Private Const KEYWORD As String = "vendor"
+Private Const SAVED_ROOT_DIR As String = "C:\TMP"
+Private Const EXCEL_EXIST_SAVE_DIR As String = "excel"
+Private Const UN_CLASSIFY_DIR As String = "Others"
+Private Const WORKSHEET_NAME As String = "xyz" 'must using low case string
+Private Const KEYWORD As String = "123"
+Private Const TIME_09AM As String = "_09_00_00"
+Private Const TIME_12AM As String = "_12_00_00"
+Private globalSavedDir As String
 
-Private Function classByReceivedData(ByVal Item As Object) As String
+Private Function checkAndCreateDir(filePath As String)
+    If Len(Dir(filePath, vbDirectory)) = 0 Then
+        'MsgBox filePath & " not exist, create now"
+        mkDirRecursion (filePath)
+    End If
+End Function
+
+Private Function checkReceivedData(ByVal Item As Object) As String
     Dim recv_date As String
     Dim last_day_012 As String
     Dim now_day_09 As String
     Dim now_day_012 As String
     Dim next_day_09 As String
 
-    last_day_012 = Format(Now - 1, "yyyy_mm_dd") & "_12_00_00"
-    now_day_09 = Format(Now, "yyyy_mm_dd") & "_09_00_00"
-    now_day_012 = Format(Now, "yyyy_mm_dd") & "_12_00_00"
-    next_day_09 = Format(Now + 1, "yyyy_mm_dd") & "_09_00_00"
+    last_day_012 = Format(now - 1, "yyyy_mm_dd") & TIME_12AM
+    now_day_09 = Format(now, "yyyy_mm_dd") & TIME_09AM
+    now_day_012 = Format(now, "yyyy_mm_dd") & TIME_12AM
+    next_day_09 = Format(now + 1, "yyyy_mm_dd") & TIME_09AM
     recv_date = Format(Item.ReceivedTime, "yyyy_mm_dd_hh_mm_ss")
     If recv_date < last_day_012 Then
         End 'skip this scenario
     ElseIf recv_date <= now_day_09 Then
-        classByReceivedData = last_day_012 & "-" & now_day_09
+        checkReceivedData = last_day_012 & "-" & now_day_09
     ElseIf recv_date > now_day_09 And recv_date < now_day_012 Then
-        classByReceivedData = now_day_09 & "-" & now_day_012
+        checkReceivedData = now_day_09 & "-" & now_day_012
     Else
-        classByReceivedData = now_day_012 & "-" & next_day_09
+        checkReceivedData = now_day_012 & "-" & next_day_09
     End If
 
-    MsgBox classByReceivedData
+    globalSavedDir = globalSavedDir & "\" & checkReceivedData
+    Debug.Print "globalSavedDir after checkReceivedData:" & globalSavedDir
+    checkAndCreateDir globalSavedDir
 End Function
 
-Private Function readFormDataInExcelFile(filepath As String) As String
+Private Function readFormDataInExcelFile(filePath As String) As String
     Dim excelApp As Excel.Application
     Dim xWb As Excel.workBook
     Dim xWs As Excel.Worksheet
     Dim cell As Range
-    
-    readFormDataInExcelFile = UN_CLASSIFY_DIR
+    Dim value As String
+
+    Debug.Print filePath
+    On Error Resume Next
+
     Set excelApp = CreateObject("Excel.Application")
-    Set xWb = excelApp.Workbooks.Open(filepath, True, True)
+    Set xWb = excelApp.Workbooks.Open(filePath, True, True)
     Set xWs = xWb.Worksheets(WORKSHEET_NAME)
-    If xWs Is Nothing Then
-        Set xWs = xWb.Worksheets(LCase(WORKSHEET_NAME))
-        If xWs Is Nothing Then
-            End
-        End If
+    If Err.Number <> 0 Then
+        Debug.Print filePath & ":spa not found"
+        readFormDataInExcelFile = UN_CLASSIFY_DIR
+        GoTo exit_read
     End If
-    
+
     With xWs.UsedRange
         Set cell = .Find(KEYWORD, LookIn:=xlValues)
         If Not cell Is Nothing Then
             Debug.Print cell.Address
-            Debug.Print "find row: " & cell.Row & "find colum: " & cell.Column
-            MsgBox "find row: " & cell.Row & "find colum: " & cell.Column
-            MsgBox xWs.Cells(cell.Row, cell.Column + 1).Value
-            readFormDataInExcelFile = xWs.Cells(cell.Row, cell.Column + 1).Value
+            MsgBox xWs.Cells(cell.Row, cell.Column + 1).value
+            value = xWs.Cells(cell.Row, cell.Column + 1).value
+            Select Case value
+            Case "abc"
+                readFormDataInExcelFile = "a"
+            Case "def"
+                readFormDataInExcelFile = "b"
+            Case "gpl"
+                readFormDataInExcelFile = "c"
+            Case Else
+                readFormDataInExcelFile = UN_CLASSIFY_DIR
+            End Select
         End If
     End With
 
-    MsgBox readFormDataInExcelFile
+exit_read:
     xWb.Close False
     Set xWs = Nothing
     Set xWb = Nothing
-
 End Function
 
 Private Function saveAttachTempory(ByVal attach As Object) As String
-    attach.SaveAsFile SAVED_ROOT_DIR & attach.filename
-    saveAttachTempory = SAVED_ROOT_DIR & attach.filename
-End Function
-
-Private Function DestoryTempory(filepath As String)
-    Kill filepath
-End Function
-
-Private Function classByAttach(ByVal Item As Object) As String
-    Dim olAtt As Attachment
-    Dim i As Integer
-    Dim tmpXlsPath As String
-
-    classByAttach = UN_CLASSIFY_DIR
-    If Item.Attachments.Count > 0 Then
-        For i = 1 To Item.Attachments.Count
-            Set olAtt = Item.Attachments(i)
-            If olAtt.filename Like "*.xls*" Or olAtt.filename Like "*.csv" Then
-                tmpXlsPath = saveAttachTempory(olAtt)
-                classByAttach = readFormDataInExcelFile(tmpXlsPath)
-                DestoryTempory (tmpXlsPath)
-            End If
-        Next
-    End If
-End Function
-
-Private Function choseAndCreateSaveDir(Item As Outlook.mailitem) As String
-    Dim saveDir As String
-    Dim recvDateClassRes As String
-    Dim attchClassRes As String
+    Dim now_time As String
     
-    saveDir = SAVED_ROOT_DIR
-    If Len(Dir(saveDir, vbDirectory)) = 0 Then
-        MkDir (saveDir)
-        MsgBox saveDir
-        On Error Resume Next
-    End If
-
-    recvDateClassRes = classByReceivedData(Item)
-    saveDir = saveDir & "\" & recvDateClassRes
-    If Len(Dir(saveDir, vbDirectory)) = 0 Then
-        MkDir (saveDir)
-        MsgBox saveDir
-        On Error Resume Next
-    End If
-
-    attchClassRes = classByAttach(Item)
-    saveDir = saveDir & "\" & attchClassRes
-    If Len(Dir(saveDir, vbDirectory)) = 0 Then
-        MkDir (saveDir)
-        MsgBox saveDir
-        On Error Resume Next
-    End If
-
-    choseAndCreateSaveDir = saveDir
-    Debug.Print choseAndCreateSaveDir
+    now_time = Format(now, "yyyy_mm_dd_hh_mm_ss")
+    attach.SaveAsFile SAVED_ROOT_DIR & "\" & now_time & "_" & attach.filename
+    saveAttachTempory = SAVED_ROOT_DIR & "\" & now_time & "_" & attach.filename
 End Function
 
-Private Function doSaveAttachment(ByVal Item As Object, path$, Optional condition$ = "*")
+Private Function DestoryTempory(filePath As String)
+    Kill filePath
+End Function
+
+Private Function doSaveOneAttachment(ByVal olAtt As Object, path$, Optional condition$ = "*")
+    If olAtt.filename Like condition Then
+        checkAndCreateDir path
+        olAtt.SaveAsFile path & "\" & olAtt.filename
+    End If
+End Function
+
+Private Function doSaveAllAttachment(ByVal Item As Object, path$)
     Dim olAtt As Attachment
     Dim i As Integer
     Dim m As Long
     Dim s As String
 
     If Item.Attachments.Count > 0 Then
+        checkAndCreateDir path
         For i = 1 To Item.Attachments.Count
             Set olAtt = Item.Attachments(i)
-            If olAtt.filename Like condition Then
-                olAtt.SaveAsFile path & "\" & olAtt.filename
-            End If
+            olAtt.SaveAsFile path & "\" & olAtt.filename
         Next
     End If
     Set olAtt = Nothing
 End Function
 
 Private Function doSaveMailBody(ByVal Item As Object, path$, Optional condition$ = "*")
+    checkAndCreateDir path
     Item.SaveAs path & "\" & Item.Subject & ".msg", OlSaveAsType.olMSG
 End Function
 
-Public Sub main(Item As Outlook.mailitem)
-    Dim saveDir As String
+Private Function classByAttach(ByVal Item As Object) As String
+    Dim olAtt As Attachment
+    Dim i As Integer
+    Dim tmpXlsPath As String
+    Dim tmpSavedDir As String
+    Dim excelExist As Boolean
+    Dim now_time As String
 
-    saveDir = choseAndCreateSaveDir(Item)
-    doSaveAttachment Item, saveDir
-    doSaveMailBody Item, saveDir
+    Debug.Print "classByAttach start"
+    excelExist = False
+    If Item.Attachments.Count > 0 Then
+        For i = 1 To Item.Attachments.Count
+            tmpSavedDir = ""
+            Set olAtt = Item.Attachments(i)
+            If olAtt.filename Like "*.xls*" Or olAtt.filename Like "*.csv" Then
+                Debug.Print "邮件主题：" & Item.Subject & " excel found"
+                excelExist = True
+                tmpXlsPath = saveAttachTempory(olAtt)
+                Debug.Print "start to run readFormDataInExcelFile" & tmpXlsPath
+                tmpSavedDir = readFormDataInExcelFile(tmpXlsPath)
+                Debug.Print "tmpSavedDir: " & tmpSavedDir
+                tmpSavedDir = EXCEL_EXIST_SAVE_DIR & "\" & tmpSavedDir & "\" & Split(olAtt.filename, ".")(0)
+                DestoryTempory (tmpXlsPath)
+                tmpSavedDir = globalSavedDir & "\" & tmpSavedDir
+                If Dir(tmpSavedDir, vbDirectory) <> Empty Then
+                    now_time = Format(now, "hh_mm_ss")
+                    tmpSavedDir = tmpSavedDir & "_" & now_time
+                End If
+                Debug.Print "邮件主题：" & Item.Subject & "保存位置：" & tmpSavedDir
+                checkAndCreateDir tmpSavedDir
+                doSaveOneAttachment olAtt, tmpSavedDir
+                doSaveMailBody Item, tmpSavedDir
+            End If
+        Next
+    End If
+
+    If excelExist = False Then
+        Debug.Print "邮件主题：" & Item.Subject & " excel not found"
+        classByAttach = UN_CLASSIFY_DIR
+        tmpSavedDir = globalSavedDir & "\" & classByAttach & "\" & Item.Subject
+        Debug.Print tmpSavedDir
+        doSaveMailBody Item, tmpSavedDir
+        If Item.Attachments.Count > 0 Then
+            doSaveAllAttachment Item, tmpSavedDir
+        End If
+    End If
+
+End Function
+
+Private Function SavedDirInit()
+    globalSavedDir = SAVED_ROOT_DIR
+    checkAndCreateDir SAVED_ROOT_DIR
+End Function
+
+Public Sub main(Item As Outlook.mailitem)
+    SavedDirInit
+    checkReceivedData Item
+    classByAttach Item
 End Sub
